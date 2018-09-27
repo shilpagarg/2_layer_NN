@@ -63,7 +63,7 @@ device = torch.device("cpu")
 
 # N is batch size; D_in is input dimension;
 # H is hidden dimension; D_out is output dimension.
-N, D_in, H, D_out = 100, 1, 400, 1 # N is P
+N, D_in, H, D_out = 100, 1, 4, 1 
 
 P_test = 20
 
@@ -71,8 +71,8 @@ sigma = .1 #level of noise
 
 
 # Create random input and output data
-x = torch.randn( D_in,N, device=device, dtype=dtype)
-x_test = torch.randn( D_in,P_test, device=device, dtype=dtype)
+x = torch.randn( D_in,N, device=device, dtype=dtype, requires_grad=True)
+x_test = torch.randn( D_in,P_test, device=device, dtype=dtype, requires_grad=True)
 
 
 epsilon = sigma*torch.randn(D_out,N, device=device, dtype=dtype)
@@ -94,7 +94,7 @@ y_noise_free_test = torch.mm(w2_teach,h_relu_teach_test)
 y_test = y_noise_free_test.add_(epsilon_test)
 
 
-num_epochs = 5000
+num_epochs = 1000
 
 learning_rate = 1e-4
 
@@ -103,15 +103,21 @@ learning_rate = 1e-4
 model = Model(D_in, H, D_out)
 teach = Model(D_in,H,D_out)
 
-optimizer = optim.SGD([model.w1,model.w2,model.gamma],lr=learning_rate)
+
+
+optimizer = torch.optim.SGD([model.w1,model.w2,model.gamma],lr=learning_rate)
+
 for n in range(num_epochs):
 	# Forward pass: compute predicted y
 	y_pred = model(x)
-	#print(y_pred  )
+	w1_np_prev=model.w1.detach().numpy()
+	#print(model.w1, model.w2, model.gamma)
 	loss = (1/N)*(y_pred - y).pow(2).sum() #.item() # == .sum() in numpy
 	optimizer.zero_grad()
 	loss.backward(retain_graph=True)
 	optimizer.step()
+	#print(model.w1, model.w2, model.gamma)
+	w1_np=model.w1.detach().numpy()
 
 
 	y_pred_test = model(x_test)
@@ -129,64 +135,71 @@ for n in range(num_epochs):
 	r_np = r.detach().numpy()
 	r_teach_np = r_teach.detach().numpy() 
 	r_inf = 10**5
-	print(D(1))
+
 
 	numX = 1000
 	
 	
-	#print(x_set)
-	#print(np.sum(model.integrand_C1(np.array([1,2,3]),3)))
-	#print(np.sum(model.integrand_C1(x_set,3)))
+	C1 =np.zeros((H,H))
+	C1_teach = np.zeros((H,H))
+	C2 =np.zeros((H,H))
+	C2_teach = np.zeros((H,H))
+	Cgamma =np.zeros((H,H))
+	Cgamma_teach = np.zeros((H,H))
 
-	C1 =[]
-	C1_teach = []
-	C2 =[]
-	C2_teach = []
-	Cgamma =[]
-	Cgamma_teach = []
 	for i in range(0,H):
 		for j in range(0,H):
 
 			r_curr = max(r_np[i], r_np[j])
 			x_set = np.linspace(r_curr,r_inf,num=numX)
 			dx = (r_inf-r_curr)/numX
-			C1.insert(j,np.sum(model.integrand_C1(x_set,j))*dx)
+			C1[i,j] = np.sum(model.integrand_C1(x_set,j))*dx
 
 			r_curr_teach = max(r_teach_np[i], r_teach_np[j])
 			x_set_teach = np.linspace(r_curr_teach,r_inf,num=numX)
 			dx_teach = (r_inf-r_curr_teach)/numX
-			C1_teach.insert(j,np.sum(model.integrand_C1(x_set_teach,j))*dx_teach)
+			C1_teach[i,j] = np.sum(model.integrand_C1(x_set_teach,j))*dx_teach
 
 
                         # C2
-			w1_np=model.w1.detach().numpy()
+			
 			gamma_np = model.gamma.detach().numpy()
-			C2.insert(j,np.sum(model.integrand_C2(x_set,i,j))*dx)
+			C2[i,j] = np.sum(model.integrand_C2(x_set,i,j))*dx
 
 
                         # C2_teach
 			w1_teach_np=w1_teach.detach().numpy()
 			gamma_teach_np = gamma_teach.detach().numpy()
-			C2_teach.insert(j,np.sum(model.integrand_C2(x_set_teach,i,j))*dx_teach)
+			C2_teach[i,j] = np.sum(model.integrand_C2(x_set_teach,i,j))*dx_teach
 
 
 			# gamma
-			Cgamma.insert(j,np.sum(model.integrand_C_gamma(x_set,j))*dx)
+			Cgamma[i,j] = np.sum(model.integrand_C_gamma(x_set,j))*dx
 
-			Cgamma_teach.insert(j,np.sum(model.integrand_C_gamma(x_set_teach,j))*dx_teach)
+			Cgamma_teach[i,j] = np.sum(model.integrand_C_gamma(x_set_teach,j))*dx_teach
 
 
-	for j in range(0,H):	
-		w1_dyn = np.sum(model.w2.detach().numpy()*(C1_teach[j]-C1[j])*model.w2.detach().numpy())
-		print(w1_dyn)
+	#print(C1)
+	w1_der_thy = np.zeros((1,H))
+	w1_num_der = np.zeros((1,H))
+	w2_der_thy = np.zeros((1,H))
+	w2_num_der = np.zeros((1,H))
 
-		w2_dyn = np.sum((C2_teach[j]-C2[j])*model.w2.detach().numpy())
-		print(w2_dyn)
+	w2_np = model.w2.detach().numpy()
+	#print(np.dot(w2_np,C1[1,:].reshape(H,1))[0][0])
 
-		wgamma_dyn = np.sum(model.w2.detach().numpy()*(C1_teach[j]-C1[j])*model.w2.detach().numpy())
-		print(wgamma_dyn)
-
-		#print(np.cov(w1_dyn,w2_dyn))
+	for i in range(0,H):	
+		w2_np = model.w2.detach().numpy()
+#		w1_der_thy[i] = 
+		C1_gap = C1_teach[i,:].reshape(H,1) - C1[i,:].reshape(H,1)
+		#print(C1_gap)
+		w1_num_der[0,i]=learning_rate*w2_np[0,i]*np.matmul(w2_np,C1_gap)
+		#print(w1_num_der[0,i])
+		w2_num_der[0,i]=learning_rate*np.matmul(w2_np,C1_gap)
+		#print(w2_num_der[0,i])
+		
+		print(w1_np[i]-w1_np_prev[i])
+		#print(w1_num_der[0,i])
 
 # hidden layer dynamics
 
