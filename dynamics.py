@@ -7,6 +7,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import matplotlib.pyplot as plt
 
 # %%
 
@@ -21,6 +22,9 @@ class Model(nn.Module):
 		self.w1 = torch.randn(H,D_in, device=device, dtype=dtype,requires_grad=True)
 		self.w2 = torch.randn( D_out,H, device=device, dtype=dtype,requires_grad=True)
 		self.gamma = torch.randn(H, D_in, device=device, dtype=dtype,requires_grad=True)
+		self.w1 = nn.Parameter(self.w1)
+		self.w2 = nn.Parameter(self.w2)
+		self.gamma = nn.Parameter(self.gamma)
 
 	def forward(self, x):
 
@@ -63,7 +67,7 @@ device = torch.device("cpu")
 
 # N is batch size; D_in is input dimension;
 # H is hidden dimension; D_out is output dimension.
-N, D_in, H, D_out = 100, 1, 4, 1 
+N, D_in, H, D_out = 100, 1, 4, 1 # N is P
 
 P_test = 20
 
@@ -94,9 +98,9 @@ y_noise_free_test = torch.mm(w2_teach,h_relu_teach_test)
 y_test = y_noise_free_test.add_(epsilon_test)
 
 
-num_epochs = 1000
+num_epochs = 10
 
-learning_rate = 1e-4
+learning_rate = .1
 
 
 #TODO: model for teacher, eign values of covariance matrix for student to teacher
@@ -107,17 +111,33 @@ teach = Model(D_in,H,D_out)
 
 optimizer = torch.optim.SGD([model.w1,model.w2,model.gamma],lr=learning_rate)
 
+w1_x = []
+w2_y = []
+true_1 = []
+true_2 = []
+true = []
 for n in range(num_epochs):
 	# Forward pass: compute predicted y
 	y_pred = model(x)
+	print('n' + str(n))
+	prev = model.w1
 	w1_np_prev=model.w1.detach().numpy()
-	#print(model.w1, model.w2, model.gamma)
-	loss = (1/N)*(y_pred - y).pow(2).sum() #.item() # == .sum() in numpy
+	for i in range(0,H):
+		true_1.append(w1_np_prev[i][0])
+	print('weights before')
+	print(w1_np_prev)
 	optimizer.zero_grad()
+	loss = (1/N)*(y_pred - y).pow(2).sum() #.item() # == .sum() in numpy
 	loss.backward(retain_graph=True)
 	optimizer.step()
-	#print(model.w1, model.w2, model.gamma)
 	w1_np=model.w1.detach().numpy()
+	print('weights after')
+	print(w1_np)
+
+	for i in range(0,H):
+		true_2.append(w1_np[i][0])
+	for i in range(0,H):
+		true.append(true_1[i] - true_2[i])
 
 
 	y_pred_test = model(x_test)
@@ -135,11 +155,15 @@ for n in range(num_epochs):
 	r_np = r.detach().numpy()
 	r_teach_np = r_teach.detach().numpy() 
 	r_inf = 10**5
-
+	#print(D(1))
 
 	numX = 1000
 	
 	
+	#print(x_set)
+	#print(np.sum(model.integrand_C1(np.array([1,2,3]),3)))
+	#print(np.sum(model.integrand_C1(x_set,3)))
+
 	C1 =np.zeros((H,H))
 	C1_teach = np.zeros((H,H))
 	C2 =np.zeros((H,H))
@@ -194,12 +218,31 @@ for n in range(num_epochs):
 		C1_gap = C1_teach[i,:].reshape(H,1) - C1[i,:].reshape(H,1)
 		#print(C1_gap)
 		w1_num_der[0,i]=learning_rate*w2_np[0,i]*np.matmul(w2_np,C1_gap)
-		#print(w1_num_der[0,i])
+		print(w1_num_der[0,i])
 		w2_num_der[0,i]=learning_rate*np.matmul(w2_np,C1_gap)
-		#print(w2_num_der[0,i])
-		
-		print(w1_np[i]-w1_np_prev[i])
-		#print(w1_num_der[0,i])
+		w1_x.append(w1_num_der[0,i])
+		w2_y.append(w2_num_der[0,i])
+		#print(w1_np[i]-w1_np_prev[i])
+		print(w2_num_der[0,i])
+
+#		print()
+	#	print('w1_dyn: '+ str(w1_dyn))
+
+	#	w2_dyn = np.sum((C2_teach[j]-C2[j])*model.w2.detach().numpy())
+	#	print('w2_dyn:' +  str(w2_dyn))
+
+	#	wgamma_dyn = np.sum(model.w2.detach().numpy()*(C1_teach[j]-C1[j])*model.w2.detach().numpy())
+	#	print('wgamma_dyn:' + str(wgamma_dyn))
+
+	
+plt.plot(w1_x, true)
+#plt.plot(w1_x, w2_y)
+plt.show()
+
+
+
+
+
 
 # hidden layer dynamics
 
